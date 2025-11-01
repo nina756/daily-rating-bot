@@ -1,1 +1,1 @@
-hello!
+hello!# daily-rating-bot
