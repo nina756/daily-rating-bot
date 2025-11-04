@@ -10,7 +10,7 @@ import pytz
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 CHAT_ID = os.environ.get('CHAT_ID', 'YOUR_CHAT_ID_HERE')
 CSV_FILE = 'daily_ratings.csv'
-REMINDER_TIME = time(22, 08)  # 5 PM
+REMINDER_TIME = time(22, 11)  # 5 PM
 TIMEZONE = pytz.timezone('Europe/Berlin')  # Adjust to your timezone
 
 # Initialize CSV file
