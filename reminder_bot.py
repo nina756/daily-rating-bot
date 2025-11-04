@@ -31,7 +31,7 @@ def save_rating(rating):
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
         chat_id=CHAT_ID,
-        text="🌟 Time to rate your day! How would you rate today on a scale of 1-10?"
+        text="🌟 Time to rate today! How would you rate today on a scale of 1-10?"
     )
 
 # Handle incoming messages
@@ -63,8 +63,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Daily Rating Bot is active!\n\n"
         "I'll remind you every day at 5 PM to rate your day.\n"
-        "Just reply with a number from 1 to 10."
+        "Just reply with a number from 1 to 10.\n\n"
+        "Commands:\n"
+        "/download - Get your ratings data as a CSV file"
     )
+
+# Download command - sends the CSV file
+async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Only respond to the specific chat
+    if str(update.effective_chat.id) != CHAT_ID:
+        return
+    
+    # Check if CSV file exists
+    if not os.path.exists(CSV_FILE):
+        await update.message.reply_text("📭 No data available yet. Start rating your days first!")
+        return
+    
+    # Send the CSV file
+    try:
+        with open(CSV_FILE, 'rb') as f:
+            await update.message.reply_document(
+                document=f,
+                filename=f'daily_ratings_{datetime.now(TIMEZONE).strftime("%Y%m%d")}.csv',
+                caption=f"📊 Your daily ratings data (downloaded on {datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M')})"
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error sending file: {str(e)}")
 
 # Setup scheduled job
 def setup_scheduler(application):
@@ -88,6 +112,7 @@ def main():
     
     # Add handlers
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("download", download))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Setup scheduler
