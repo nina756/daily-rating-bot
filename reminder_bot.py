@@ -11,7 +11,7 @@ TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID', 'YOUR_ADMIN_CHAT_ID')  # Your personal chat ID
 CSV_FILE = 'daily_ratings.csv'
 USERS_FILE = 'registered_users.txt'
-REMINDER_TIME = time(22, 17)  # 10:17 PM
+REMINDER_TIME = time(17, 00)  # 10:17 PM
 TIMEZONE = pytz.timezone('Europe/Berlin')  # Adjust to your timezone
 
 # Initialize CSV file with chat_id column
@@ -80,7 +80,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Register user if not already registered
             if add_user(chat_id):
                 await update.message.reply_text(
-                    "🎉 Welcome! You've been registered for daily reminders at 10:17 PM Berlin time."
+                    "🎉 Welcome! You've been registered for daily reminders at 18:00 PM Berlin time."
                 )
             
             save_rating(chat_id, rating)
