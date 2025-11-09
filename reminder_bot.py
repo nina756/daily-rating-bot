@@ -8,53 +8,82 @@ import pytz
 
 # Configuration
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'YOUR_BOT_TOKEN_HERE')
-# Support multiple chat IDs - can be comma-separated in environment variable
-CHAT_IDS_STR = os.environ.get('CHAT_IDS', 'YOUR_CHAT_ID_HERE')
-CHAT_IDS = [chat_id.strip() for chat_id in CHAT_IDS_STR.split(',')]
+ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID', 'YOUR_ADMIN_CHAT_ID')  # Your personal chat ID
 CSV_FILE = 'daily_ratings.csv'
-REMINDER_TIME = time(17, 0)  # 5 PM
+USERS_FILE = 'registered_users.txt'
+REMINDER_TIME = time(17, 00)  # 10:17 PM
 TIMEZONE = pytz.timezone('Europe/Berlin')  # Adjust to your timezone
 
-# Initialize CSV file
+# Initialize CSV file with chat_id column
 def init_csv():
     if not os.path.exists(CSV_FILE):
         with open(CSV_FILE, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['Date', 'Timestamp', 'Rating'])
+            writer.writerow(['Date', 'Timestamp', 'Chat_ID', 'Rating'])
+
+# Initialize users file
+def init_users_file():
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, 'w') as f:
+            pass  # Create empty file
+
+# Load registered users
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        return set()
+    with open(USERS_FILE, 'r') as f:
+        return set(line.strip() for line in f if line.strip())
+
+# Add new user
+def add_user(chat_id):
+    users = load_users()
+    chat_id_str = str(chat_id)
+    if chat_id_str not in users:
+        with open(USERS_FILE, 'a') as f:
+            f.write(f"{chat_id_str}\n")
+        return True
+    return False
 
 # Save rating to CSV
-def save_rating(rating):
+def save_rating(chat_id, rating):
     now = datetime.now(TIMEZONE)
     with open(CSV_FILE, 'a', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow([now.strftime('%Y-%m-%d'), now.strftime('%Y-%m-%d %H:%M:%S'), rating])
+        writer.writerow([
+            now.strftime('%Y-%m-%d'), 
+            now.strftime('%Y-%m-%d %H:%M:%S'), 
+            chat_id,
+            rating
+        ])
 
-# Send daily reminder
+# Send daily reminder to all registered users
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
-    print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] Sending daily reminder to {len(CHAT_IDS)} chat(s)...")
-    for chat_id in CHAT_IDS:
+    users = load_users()
+    for chat_id in users:
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="🌟 Time to rate your day! How would you rate today on a scale of 1-10?"
+                text="🌟 Time to rate today! How would you rate today on a scale of 1-10?"
             )
-            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] ✓ Reminder sent to chat ID: {chat_id}")
         except Exception as e:
-            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] ✗ Failed to send to {chat_id}: {e}")
+            print(f"Error sending reminder to {chat_id}: {e}")
 
 # Handle incoming messages
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Only respond to messages from authorized chats
-    if str(update.effective_chat.id) not in CHAT_IDS:
-        return
-    
+    chat_id = update.effective_chat.id
     text = update.message.text.strip()
     
     # Check if it's a valid rating (1-10)
     try:
         rating = int(text)
         if 1 <= rating <= 10:
-            save_rating(rating)
+            # Register user if not already registered
+            if add_user(chat_id):
+                await update.message.reply_text(
+                    "🎉 Welcome! You've been registered for daily reminders at 18:00 PM Berlin time."
+                )
+            
+            save_rating(chat_id, rating)
             await update.message.reply_text(
                 f"✅ Thanks! Your rating of {rating}/10 has been recorded for {datetime.now(TIMEZONE).strftime('%Y-%m-%d')}."
             )
@@ -63,45 +92,163 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "❌ Please send a number between 1 and 10."
             )
     except ValueError:
-        # Not a number, ignore or send help message
+        # Not a number, ignore
         pass
 
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Daily Rating Bot is active!\n\n"
-        "I'll remind you every day at 5 PM to rate your day.\n"
+    chat_id = update.effective_chat.id
+    
+    # Register the user
+    is_new = add_user(chat_id)
+    
+    welcome_msg = "👋 Daily Rating Bot is active!\n\n"
+    if is_new:
+        welcome_msg += "🎉 You've been registered for daily reminders!\n\n"
+    
+    welcome_msg += (
+        f"I'll remind you every day at {REMINDER_TIME.strftime('%I:%M %p')} (Berlin time) to rate your day.\n"
         "Just reply with a number from 1 to 10.\n\n"
         "Commands:\n"
-        "/download - Get your ratings data as a CSV file"
+        "/download - Get your ratings data as a CSV file\n"
+        "/stats - View your rating statistics\n"
+        "/stop - Stop receiving daily reminders"
     )
+    
+    await update.message.reply_text(welcome_msg)
 
-# Download command - sends the CSV file
+# Download command - sends the CSV file with user's data
 async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Only respond to authorized chats
-    if str(update.effective_chat.id) not in CHAT_IDS:
-        return
+    chat_id = update.effective_chat.id
     
     # Check if CSV file exists
     if not os.path.exists(CSV_FILE):
         await update.message.reply_text("📭 No data available yet. Start rating your days first!")
         return
     
-    # Send the CSV file
+    # Create a filtered CSV with only this user's data
     try:
+        temp_file = f'temp_{chat_id}.csv'
+        with open(CSV_FILE, 'r', newline='') as infile, open(temp_file, 'w', newline='') as outfile:
+            reader = csv.reader(infile)
+            writer = csv.writer(outfile)
+            
+            # Write header
+            header = next(reader)
+            writer.writerow(header)
+            
+            # Write only rows for this user
+            for row in reader:
+                if len(row) >= 3 and row[2] == str(chat_id):
+                    writer.writerow(row)
+        
+        # Send the filtered CSV file
+        with open(temp_file, 'rb') as f:
+            await update.message.reply_document(
+                document=f,
+                filename=f'my_daily_ratings_{datetime.now(TIMEZONE).strftime("%Y%m%d")}.csv',
+                caption=f"📊 Your daily ratings data (downloaded on {datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M')})"
+            )
+        
+        # Clean up temp file
+        os.remove(temp_file)
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error sending file: {str(e)}")
+
+# Stats command - show user statistics
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    
+    if not os.path.exists(CSV_FILE):
+        await update.message.reply_text("📭 No data available yet. Start rating your days first!")
+        return
+    
+    try:
+        ratings = []
+        with open(CSV_FILE, 'r', newline='') as f:
+            reader = csv.reader(f)
+            next(reader)  # Skip header
+            for row in reader:
+                if len(row) >= 4 and row[2] == str(chat_id):
+                    ratings.append(int(row[3]))
+        
+        if not ratings:
+            await update.message.reply_text("📭 No ratings recorded yet. Send a number from 1-10 to start!")
+            return
+        
+        avg_rating = sum(ratings) / len(ratings)
+        max_rating = max(ratings)
+        min_rating = min(ratings)
+        
+        stats_msg = (
+            f"📊 Your Rating Statistics:\n\n"
+            f"Total ratings: {len(ratings)}\n"
+            f"Average: {avg_rating:.1f}/10\n"
+            f"Highest: {max_rating}/10\n"
+            f"Lowest: {min_rating}/10"
+        )
+        
+        await update.message.reply_text(stats_msg)
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error calculating stats: {str(e)}")
+
+# Stop command - unregister user
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    users = load_users()
+    
+    if chat_id in users:
+        users.remove(chat_id)
+        with open(USERS_FILE, 'w') as f:
+            for user in users:
+                f.write(f"{user}\n")
+        await update.message.reply_text(
+            "👋 You've been unregistered from daily reminders.\n"
+            "Your rating history is preserved. Use /start to register again."
+        )
+    else:
+        await update.message.reply_text("You're not currently registered for reminders.")
+
+# Admin command - download full dataset (admin only)
+async def admin_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    
+    # Check if user is admin
+    if chat_id != ADMIN_CHAT_ID:
+        await update.message.reply_text("❌ This command is only available to the admin.")
+        return
+    
+    # Check if CSV file exists
+    if not os.path.exists(CSV_FILE):
+        await update.message.reply_text("📭 No data available yet.")
+        return
+    
+    try:
+        # Send the full CSV file
         with open(CSV_FILE, 'rb') as f:
             await update.message.reply_document(
                 document=f,
-                filename=f'daily_ratings_{datetime.now(TIMEZONE).strftime("%Y%m%d")}.csv',
-                caption=f"📊 Your daily ratings data (downloaded on {datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M')})"
+                filename=f'all_daily_ratings_{datetime.now(TIMEZONE).strftime("%Y%m%d")}.csv',
+                caption=f"📊 Full dataset - All users (downloaded on {datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M')})"
             )
+        
+        # Also send the users file
+        if os.path.exists(USERS_FILE):
+            with open(USERS_FILE, 'rb') as f:
+                await update.message.reply_document(
+                    document=f,
+                    filename=f'registered_users_{datetime.now(TIMEZONE).strftime("%Y%m%d")}.txt',
+                    caption=f"👥 Registered users list"
+                )
     except Exception as e:
-        await update.message.reply_text(f"❌ Error sending file: {str(e)}")
+        await update.message.reply_text(f"❌ Error sending files: {str(e)}")
 
 # Setup scheduled job
 def setup_scheduler(application):
     job_queue = application.job_queue
-    # Schedule daily reminder at 5 PM
+    # Schedule daily reminder at specified time
     job_queue.run_daily(
         send_reminder,
         time=REMINDER_TIME,
@@ -111,8 +258,9 @@ def setup_scheduler(application):
     )
 
 def main():
-    # Initialize CSV
+    # Initialize files
     init_csv()
+    init_users_file()
     
     # Create application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -120,13 +268,17 @@ def main():
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("download", download))
+    application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("stop", stop))
+    application.add_handler(CommandHandler("admindownload", admin_download))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Setup scheduler
     setup_scheduler(application)
     
     print(f"Bot started! Daily reminders will be sent at {REMINDER_TIME} {TIMEZONE}")
-    print(f"Monitoring chat IDs: {', '.join(CHAT_IDS)}")
+    print(f"Users will be automatically registered when they interact with the bot")
+    print(f"Current registered users: {len(load_users())}")
     
     # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
