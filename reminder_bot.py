@@ -11,7 +11,7 @@ TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID', 'YOUR_ADMIN_CHAT_ID')  # Your personal chat ID
 CSV_FILE = 'daily_ratings.csv'
 USERS_FILE = 'registered_users.txt'
-REMINDER_TIME = time(17, 00)  # 10:17 PM
+REMINDER_TIME = time(22, 17)  # 10:17 PM
 TIMEZONE = pytz.timezone('Europe/Berlin')  # Adjust to your timezone
 
 # Initialize CSV file with chat_id column
@@ -80,7 +80,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Register user if not already registered
             if add_user(chat_id):
                 await update.message.reply_text(
-                    "🎉 Welcome! You've been registered for daily reminders at 18:00 PM Berlin time."
+                    "🎉 Welcome! You've been registered for daily reminders at 10:17 PM Berlin time."
                 )
             
             save_rating(chat_id, rating)
@@ -98,6 +98,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    
+    # Log the chat ID
+    print(f"User started bot - Chat ID: {chat_id}, Username: {update.effective_user.username}, Name: {update.effective_user.first_name}")
     
     # Register the user
     is_new = add_user(chat_id)
@@ -245,6 +248,128 @@ async def admin_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error sending files: {str(e)}")
 
+# Admin command - view registered users (admin only)
+async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    
+    # Check if user is admin
+    if chat_id != ADMIN_CHAT_ID:
+        await update.message.reply_text("❌ This command is only available to the admin.")
+        return
+    
+    users = load_users()
+    
+    if not users:
+        await update.message.reply_text("📭 No registered users yet.")
+        return
+    
+    user_list = "\n".join(f"• {user}" for user in sorted(users))
+    await update.message.reply_text(
+        f"👥 Registered Users ({len(users)} total):\n\n{user_list}"
+    )
+
+# Admin command - manually add user(s) (admin only)
+async def admin_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    
+    # Check if user is admin
+    if chat_id != ADMIN_CHAT_ID:
+        await update.message.reply_text("❌ This command is only available to the admin.")
+        return
+    
+    # Check if chat IDs were provided
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /adminadd <chat_id1> <chat_id2> ...\n\n"
+            "Example: /adminadd 123456789 987654321\n\n"
+            "Add one or more chat IDs to the registered users list."
+        )
+        return
+    
+    added = []
+    already_exists = []
+    invalid = []
+    
+    for user_id in context.args:
+        # Validate that it's a number
+        try:
+            int(user_id)  # Just check if it's a valid number
+            if add_user(user_id):
+                added.append(user_id)
+            else:
+                already_exists.append(user_id)
+        except ValueError:
+            invalid.append(user_id)
+    
+    # Build response message
+    response = "📝 Add Users Result:\n\n"
+    
+    if added:
+        response += f"✅ Added ({len(added)}):\n"
+        response += "\n".join(f"  • {uid}" for uid in added) + "\n\n"
+    
+    if already_exists:
+        response += f"ℹ️ Already registered ({len(already_exists)}):\n"
+        response += "\n".join(f"  • {uid}" for uid in already_exists) + "\n\n"
+    
+    if invalid:
+        response += f"❌ Invalid chat IDs ({len(invalid)}):\n"
+        response += "\n".join(f"  • {uid}" for uid in invalid) + "\n\n"
+    
+    response += f"Total registered users: {len(load_users())}"
+    
+    await update.message.reply_text(response)
+
+# Admin command - remove user(s) (admin only)
+async def admin_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    
+    # Check if user is admin
+    if chat_id != ADMIN_CHAT_ID:
+        await update.message.reply_text("❌ This command is only available to the admin.")
+        return
+    
+    # Check if chat IDs were provided
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /adminremove <chat_id1> <chat_id2> ...\n\n"
+            "Example: /adminremove 123456789 987654321\n\n"
+            "Remove one or more chat IDs from the registered users list."
+        )
+        return
+    
+    users = load_users()
+    removed = []
+    not_found = []
+    
+    for user_id in context.args:
+        if user_id in users:
+            users.remove(user_id)
+            removed.append(user_id)
+        else:
+            not_found.append(user_id)
+    
+    # Save updated users list
+    if removed:
+        with open(USERS_FILE, 'w') as f:
+            for user in users:
+                f.write(f"{user}\n")
+    
+    # Build response message
+    response = "🗑️ Remove Users Result:\n\n"
+    
+    if removed:
+        response += f"✅ Removed ({len(removed)}):\n"
+        response += "\n".join(f"  • {uid}" for uid in removed) + "\n\n"
+    
+    if not_found:
+        response += f"ℹ️ Not found ({len(not_found)}):\n"
+        response += "\n".join(f"  • {uid}" for uid in not_found) + "\n\n"
+    
+    response += f"Total registered users: {len(load_users())}"
+    
+    await update.message.reply_text(response)
+
 # Setup scheduled job
 def setup_scheduler(application):
     job_queue = application.job_queue
@@ -271,6 +396,9 @@ def main():
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("stop", stop))
     application.add_handler(CommandHandler("admindownload", admin_download))
+    application.add_handler(CommandHandler("adminusers", admin_users))
+    application.add_handler(CommandHandler("adminadd", admin_add))
+    application.add_handler(CommandHandler("adminremove", admin_remove))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Setup scheduler
