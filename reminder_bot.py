@@ -188,8 +188,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         welcome_msg += "🎉 You've been registered for daily reminders!\n\n"
 
     welcome_msg += (
-        f"I'll remind you every day at {FIRST_REMINDER_TIME.strftime('%H:%M')} (Berlin time) to rate your day.\n"
-        f"If you haven’t rated by {DEADLINE_REMINDER_TIME.strftime('%H:%M')}, I’ll send another reminder.\n\n"
+        f"I'll remind you every day at 18:00 (Berlin time) to rate your day.\n"
+        f"If you haven’t rated by 22:00, I’ll send another reminder.\n\n"
         "Just reply with a number from 1 to 10.\n\n"
         "Commands:\n"
         "/download - Get your ratings data as a CSV file\n"
@@ -221,7 +221,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_new = add_user(chat_id)
     if is_new:
         await update.message.reply_text(
-            f"🎉 Welcome! You've been registered for daily reminders at {FIRST_REMINDER_TIME.strftime('%H:%M')} Berlin time."
+            f"🎉 Welcome! You've been registered for daily reminders at 18:00 Berlin time."
         )
 
     save_rating(chat_id, rating)
