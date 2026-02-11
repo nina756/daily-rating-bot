@@ -22,8 +22,8 @@ USERS_FILE = "registered_users.txt"
 TIMEZONE = pytz.timezone("Europe/Berlin")
 
 # Daily reminder (main ping) and deadline reminder (only if missing)
-FIRST_REMINDER_TIME = time(18, 0)       # 18:00 Berlin time (change as you like)
-DEADLINE_REMINDER_TIME = time(22, 30)   # 22:30 Berlin time (10:30pm)
+FIRST_REMINDER_TIME = time(17, 0)       # 18:00 Berlin time (change as you like)
+DEADLINE_REMINDER_TIME = time(21, 00)   # 22:30 Berlin time (10:30pm)
 
 
 # =========================
